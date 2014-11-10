@@ -1,0 +1,5 @@
+suites:
+  lexer:
+    namespace: ChrisCooper\SphinxConfReader
+    src_path: src
+    psr4_prefix: ChrisCooper\SphinxConfReader

@@ -1,0 +1,24 @@
+{
+  "name": "chriscooper/sphinx-conf-reader",
+  "description": "Sphinx config file lexer / parser",
+  "minimum-stability": "dev",
+  "authors": [
+    {
+      "name": "Chris Cooper",
+      "email": "chriscooper207@gmail.com"
+    }
+  ],
+  "require": {
+    "nikic/phlexy": "1.0.*@dev"
+  },
+  "require-dev": {
+    "mrlunar/php-dbg-dumper": "dev-master",
+    "phpspec/phpspec": "~2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "ChrisCooper\\SphinxConfReader\\": "src"
+    }
+  },
+  "minimum-stability": "dev"
+}
