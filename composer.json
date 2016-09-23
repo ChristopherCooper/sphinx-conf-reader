@@ -9,16 +9,17 @@
     }
   ],
   "require": {
-    "nikic/phlexy": "1.0.*@dev"
+    "nikic/phlexy": "1.0.*@dev",
+    "illuminate/support": "5.2.*"
   },
   "require-dev": {
-    "mrlunar/php-dbg-dumper": "dev-master",
-    "phpspec/phpspec": "~2.0"
+    "symfony/console": "3.0.*",
+    "symfony/var-dumper": "3.0.*"
   },
   "autoload": {
     "psr-4": {
-      "ChrisCooper\\SphinxConfReader\\": "src"
+      "ChrisCooper\\SphinxConfReader\\": "src",
+      "tests\\ChrisCooper\\SphinxConfReader\\": "tests"
     }
-  },
-  "minimum-stability": "dev"
+  }
 }

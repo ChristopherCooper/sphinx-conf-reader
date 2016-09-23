@@ -1,5 +1,8 @@
 <?php namespace ChrisCooper\SphinxConfReader;
 
+use ChrisCooper\SphinxConfReader\Nodes\Index;
+use ChrisCooper\SphinxConfReader\Nodes\Node;
+use ChrisCooper\SphinxConfReader\Nodes\Source;
 use Phlexy\LexerFactory\Stateless\UsingPregReplace;
 use Phlexy\LexerDataGenerator;
 
@@ -15,27 +18,30 @@ class Lexer
   const T_CURLY_BRACER_CLOSE = 6;
   const T_TEXTBLOCK = 7;
   const T_LINEBREAK = 8;
+  const T_NODE_OPEN = 10;
+  const T_NODE_CLOSE = 11;
+  const T_VARIABLE = 12;
 
-  private $regexs;
-  private $lexer;
-  private $factory;
+  /** @var UsingPregReplace */
+  protected $factory;
+
+  /** @var \Phlexy\Lexer\Stateless\UsingPregReplace */
+  public $lexer;
+
+  protected $regexs = [];
 
   public function __construct()
   {
     $this->regexs = [
       '#[^\r\n]*' => self::T_COMMENT,
-      '=' => self::T_EQUAL,
-      ':' => self::T_SEPERATOR,
       '\h+' => self::T_HORI_WHITESPACE,
-      '{' => self::T_CURLY_BRACER_OPEN,
-      '}' => self::T_CURLY_BRACER_CLOSE,
-      '[^\h{}:=\r\n]+' => self::T_TEXTBLOCK,
+      '(source|index)\s+([^\:\s\#]+)(?:\s*\:\s*([^\s\#]+))?\s*\{' => self::T_NODE_OPEN,
+      '}' => self::T_NODE_CLOSE,
+      '([^\s\#]+)\h*\=\h*([^\s\#]+)' => self::T_VARIABLE,
       '\r?\n' => self::T_LINEBREAK
     ];
 
-    $this->factory = new UsingPregReplace(
-      new LexerDataGenerator
-    );
+    $this->factory = new UsingPregReplace(new LexerDataGenerator);
 
     $this->lexer = $this->factory->createLexer($this->regexs);
   }
@@ -59,92 +65,91 @@ class Lexer
   public function parseTokens($tokens)
   {
     $current_node = self::T_ROOT;
-    $parsed = [];
-    $config_reset = $config = [
-      'type' => null,
-      'argument' => null,
-      'values' => []
-    ];
+    $config = [];
+
+    /** @var Node|null $node */
+    $node = null;
+
+    $variable_key = $variable_value = null;
+
     foreach ($tokens as $token) {
       $line_context = " (Line #".$token[1].")";
       switch ($token[0]) {
-        // Text blocks are dependant on which node they are in
-        case self::T_TEXTBLOCK:
+        case self::T_NODE_OPEN:
+          if (!in_array($current_node, [static::T_ROOT])) {
+            throw new SyntaxErrorException(
+              'Syntax error, expected T_ROOT'.
+              $this->get_constant_name($current_node).$line_context
+            );
+          }
+          switch ($token[3][1]) {
+            case 'source':
+              $node = new Source($token[3][2], $token[3][3]);
+              break;
+            case 'index':
+              $node = new Index($token[3][2], isset($token[3][3]) ? $token[3][3] : null);
+              break;
+          }
+          $current_node = static::T_NODE_OPEN;
+          break;
+        case self::T_NODE_CLOSE:
+          if (!in_array($current_node, [static::T_NODE_OPEN])) {
+            throw new SyntaxErrorException(
+              'Syntax error, expected T_NODE_OPEN given '.
+              $this->get_constant_name($current_node).$line_context
+            );
+          }
+
+          $config[] = $node;
+
+          $current_node = static::T_ROOT;
+          unset($node);
+          break;
+        case static::T_VARIABLE:
+          if (!in_array($current_node, [static::T_NODE_OPEN])) {
+            throw new SyntaxErrorException(
+              'Syntax error, expected T_NODE_OPEN given '.
+              $this->get_constant_name($current_node).$line_context
+            );
+          }
+
+          $variable_key = trim($token[3][1]);
+          $variable_value = trim($token[3][2]);
+
+          $current_node = static::T_VARIABLE;
+          break;
+
+        case static::T_LINEBREAK:
           switch ($current_node) {
-            case self::T_ROOT:
-              $config['type'] = $token[2];
-              $current_node = self::T_TYPE;
-              break;
-            case self::T_TYPE:
-              $config_type_name = $token[2];
-              break;
-            case self::T_SEPERATOR:
-              $config['argument'] = $token[2];
-              $current_node = self::T_TYPE;
-              break;
-            case self::T_CURLY_BRACER_OPEN:
-              $config_key = $token[2];
-              break;
-            case self::T_EQUAL:
-              $config['values'][$config_key] = $token[2];
-              $current_node = self::T_CURLY_BRACER_OPEN;
-              break;
-            default:
-              throw new LexerSyntaxErrorException(
-                'Syntax error, expected one of T_ROOT, T_TYPE, T_SEPERATOR, T_CURLY_BRACER_OPEN, T_EQUAL given '.
-                $this->get_constant_name($current_node).$line_context
-              );
-              break;
-          }
-          break;
+            case static::T_VARIABLE:
+              if ($variable_key === null || $variable_value === null) {
+                throw new SyntaxErrorException(
+                  'Syntax error, no variable key or value found '.$line_context
+                );
+              }
+              if ($node === null) {
+                throw new SyntaxErrorException(
+                  'No node defined '.$line_context
+                );
+              }
 
-        // For these just set the current node to this
-        case self::T_SEPERATOR:
-          if ($current_node !== self::T_TYPE) {
-            throw new LexerSyntaxErrorException(
-              'Syntax error, expected T_TYPE, given '.$this->get_constant_name($current_node).$line_context
-            );
-          }
-          $current_node = $token[0];
-          break;
-        case self::T_EQUAL:
-          if ($current_node !== self::T_CURLY_BRACER_OPEN) {
-            throw new LexerSyntaxErrorException(
-              'Syntax error, expected T_CURLY_BRACER_OPEN, given '.$this->get_constant_name($current_node).$line_context
-            );
-          }
-          $current_node = $token[0];
-          break;
-        case self::T_CURLY_BRACER_OPEN:
-          if ($current_node !== self::T_TYPE) {
-            throw new LexerSyntaxErrorException(
-              'Syntax error, expected T_TYPE, given '.$this->get_constant_name($current_node).$line_context
-            );
-          }
-          $current_node = $token[0];
-          break;
+              $node[$variable_key] = $variable_value;
 
-        // Curly bracer closure implies we have a config set, save it to the list
-        case self::T_CURLY_BRACER_CLOSE:
-          if ($current_node !== self::T_CURLY_BRACER_OPEN) {
-            throw new LexerSyntaxErrorException(
-              'Syntax error, expected T_CURLY_BRACER_OPEN, given '.$this->get_constant_name($current_node).$line_context
-            );
+              $variable_key = $variable_value = null;
+              $current_node = static::T_NODE_OPEN;
+              break;
           }
-          $current_node = self::T_ROOT;
-          $parsed[$config_type_name] = $config;
-          $config = $config_reset;
           break;
       }
     }
 
     if ($current_node !== self::T_ROOT) {
-      throw new LexerSyntaxErrorException(
+      throw new SyntaxErrorException(
         'Syntax error, expected T_ROOT, given '.$this->get_constant_name($current_node).$line_context
       );
     }
 
-    return $parsed;
+    return $config;
   }
 
   protected function get_constant_name($constant_value)
