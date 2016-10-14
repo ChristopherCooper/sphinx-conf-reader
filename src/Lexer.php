@@ -25,6 +25,9 @@ class Lexer
   /** @var UsingPregReplace */
   protected $factory;
 
+  /** @var string */
+  protected $filename;
+
   /** @var \Phlexy\Lexer\Stateless\UsingPregReplace */
   public $lexer;
 
@@ -52,6 +55,7 @@ class Lexer
       throw new \Exception('File not found "'.$filename.'"');
     }
     $tokens = $this->lex(file_get_contents($filename));
+    $this->filename = $filename;
     $conf = $this->parseTokens($tokens);
 
     return $conf;
@@ -73,7 +77,7 @@ class Lexer
     $variable_key = $variable_value = null;
 
     foreach ($tokens as $token) {
-      $line_context = " (Line #".$token[1].")";
+      $line_context = " (Line ".$this->filename."#".$token[1].")";
       switch ($token[0]) {
         case self::T_NODE_OPEN:
           if (!in_array($current_node, [static::T_ROOT])) {
